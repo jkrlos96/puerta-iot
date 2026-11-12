@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Acceso IoT | Puerta Automática</title>
+    <!-- Tailwind CSS vía CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Fuentes Inter y JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased selection:bg-cyan-500 selection:text-slate-950">
+
+    <!-- Barra de navegación superior minimalista (sin título en esquina izquierda) -->
+    <header class="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <!-- Indicador de estado de conexión del sistema -->
+            <div id="connection-badge" class="flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-emerald-950/50 border border-emerald-500/30 text-xs sm:text-sm font-medium text-emerald-300">
+                <span class="relative flex h-2.5 w-2.5">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                </span>
+                <span id="connection-text">Sistema en línea</span>
+            </div>
+
+            <!-- Botón discreto para abrir modal de Guía de Conexión / API -->
+            <button onclick="toggleIntegrationModal(true)" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-medium border border-slate-700 transition-colors cursor-pointer">
+                <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                </svg>
+                <span>Guía de Conexión</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Contenedor de notificaciones flotantes (Toast) -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Contenido Principal en Cuadrícula Responsiva -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+            <!-- COLUMNA IZQUIERDA (4 columnas): Estado de la Puerta y Control Remoto -->
+            <section class="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between shadow-xl">
+                <div>
+                    <div class="flex items-center justify-between mb-5">
+                        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Estado de la Puerta</h2>
+                        <span id="door-timer-badge" class="hidden text-xs font-mono px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                            Cierre en <span id="countdown-seconds">5</span>s
+                        </span>
+                    </div>
+
+                    <!-- Tarjeta Visual del Estado de la Puerta -->
+                    <div id="door-status-card" class="rounded-2xl p-6 border transition-all duration-300 bg-slate-800/50 border-emerald-500/25 flex flex-col items-center text-center">
+                        <!-- Icono de Candado -->
+                        <div id="door-icon-wrapper" class="w-20 h-20 rounded-2xl flex items-center justify-center mb-4 transition-all duration-300 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shadow-lg shadow-slate-950/60">
+                            <!-- Candado Cerrado (Por defecto) -->
+                            <svg id="icon-locked" class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                            <!-- Candado Abierto (Oculto por defecto) -->
+                            <svg id="icon-unlocked" class="w-10 h-10 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                            </svg>
+                        </div>
+
+                        <div class="space-y-1.5">
+                            <span id="door-status-text" class="text-2xl sm:text-3xl font-bold tracking-tight text-emerald-400">
+                                CERRADA
+                            </span>
+                            <p id="door-status-subtext" class="text-xs sm:text-sm text-slate-400">
+                                Acceso asegurado • En espera de lectura RFID
+                            </p>
+                        </div>
+
+                        <!-- Barra de progreso regresiva (visible solo cuando está abierta) -->
+                        <div id="door-progress-container" class="w-full bg-slate-950/80 h-1.5 rounded-full mt-5 overflow-hidden hidden">
+                            <div id="door-progress-bar" class="bg-amber-400 h-full transition-all duration-1000 ease-linear" style="width: 100%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Botón Principal de Apertura Remota -->
+                <div class="mt-6 pt-6 border-t border-slate-800">
+                    <button id="btn-remote-open" onclick="triggerRemoteOpen()" class="w-full py-4 px-5 rounded-xl font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 active:scale-[0.99] transition-all duration-200 shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                        </svg>
+                        <span id="btn-remote-text">Abrir Puerta Remotamente</span>
+                    </button>
+                    <p class="text-[11px] text-center text-slate-500 mt-3">
+                        Activa el actuador durante 5 segundos y registra el evento en la bitácora.
+                    </p>
+                </div>
+
+                <!-- Resumen Estadístico Compacto -->
+                <div class="mt-6 pt-5 border-t border-slate-800 grid grid-cols-3 gap-2 text-center">
+                    <div class="bg-slate-800/40 rounded-xl p-2.5 border border-slate-800">
+                        <p class="text-[11px] text-slate-400">Total</p>
+                        <p id="stat-total" class="text-base font-bold text-white mt-0.5">0</p>
+                    </div>
+                    <div class="bg-slate-800/40 rounded-xl p-2.5 border border-slate-800">
+                        <p class="text-[11px] text-slate-400">Autorizados</p>
+                        <p id="stat-allowed" class="text-base font-bold text-emerald-400 mt-0.5">0</p>
+                    </div>
+                    <div class="bg-slate-800/40 rounded-xl p-2.5 border border-slate-800">
+                        <p class="text-[11px] text-slate-400">Denegados</p>
+                        <p id="stat-denied" class="text-base font-bold text-rose-400 mt-0.5">0</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- COLUMNA DERECHA (8 columnas): Tabla de Registro de Accesos -->
+            <section class="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden flex flex-col">
+                <!-- Cabecera de la Tabla y Controles de Filtrado -->
+                <div class="p-6 border-b border-slate-800 space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                            <h2 class="text-base sm:text-lg font-bold text-white">Registro de Accesos</h2>
+                            <p class="text-xs sm:text-sm text-slate-400">Historial en tiempo real de ingresos por RFID y aperturas remotas.</p>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <!-- Botón Exportar CSV -->
+                            <button onclick="exportLogsCSV()" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition-colors cursor-pointer">
+                                <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                </svg>
+                                <span>Exportar CSV</span>
+                            </button>
+
+                            <!-- Botón Limpiar Historial -->
+                            <button onclick="clearLogs()" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 text-xs font-medium border border-rose-800/50 transition-colors cursor-pointer">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                                <span>Limpiar historial</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Barra de Búsqueda por Nombre y Filtro de Estado -->
+                    <div class="flex flex-col sm:flex-row gap-3">
+                        <div class="relative flex-1">
+                            <svg class="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                            <input
+                                type="text"
+                                id="search-input"
+                                oninput="renderLogsTable()"
+                                placeholder="Buscar por nombre o UID..."
+                                class="w-full bg-slate-950/70 border border-slate-800 focus:border-cyan-500 rounded-xl pl-10 pr-4 py-2 text-xs sm:text-sm text-slate-200 placeholder-slate-500 focus:outline-none transition-colors"
+                            />
+                        </div>
+
+                        <select id="filter-status" onchange="renderLogsTable()" class="bg-slate-950/70 border border-slate-800 focus:border-cyan-500 text-slate-200 text-xs sm:text-sm rounded-xl px-3.5 py-2 focus:outline-none transition-colors">
+                            <option value="ALL">Todos los estados</option>
+                            <option value="Autorizado">Solo Autorizados</option>
+                            <option value="Denegado">Solo Denegados</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Contenedor Responsivo de la Tabla -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-950/60 border-b border-slate-800 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                                <th class="py-3.5 px-5">Nombre</th>
+                                <th class="py-3.5 px-5">UID</th>
+                                <th class="py-3.5 px-5">Método</th>
+                                <th class="py-3.5 px-5">Fecha y Hora</th>
+                                <th class="py-3.5 px-5 text-right">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="access-logs-tbody" class="divide-y divide-slate-800/70 text-sm">
+                            <!-- Renderizado dinámico mediante JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Mensaje cuando no hay coincidencias -->
+                <div id="empty-logs-state" class="hidden py-14 px-4 text-center">
+                    <p class="text-slate-400 text-sm">No se encontraron registros de acceso con los filtros actuales.</p>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <!-- Modal Discreto: Guía de Conexión con ESP32-S3 -->
+    <div id="integration-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl">
+            <div class="p-6 border-b border-slate-800 flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-lg bg-cyan-500/15 text-cyan-400 flex items-center justify-center border border-cyan-500/30">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                    </div>
+                    <h3 class="text-base sm:text-lg font-bold text-white">Guía de Conexión API / ESP32-S3</h3>
+                </div>
+                <button onclick="toggleIntegrationModal(false)" class="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <div class="p-6 overflow-y-auto space-y-5 text-sm text-slate-300 leading-relaxed">
+                <p>
+                    Esta interfaz expone funciones globales listas para conectarse por <strong>WebSockets, MQTT o Firebase</strong> con tu microcontrolador <strong>ESP32-S3</strong>:
+                </p>
+
+                <!-- Bloque JSON esperado -->
+                <div class="space-y-2">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">1. Formato JSON enviado desde la ESP32-S3 al leer un Tag</p>
+                    <pre class="p-4 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-cyan-300 overflow-x-auto">{
+  "nombre": "Carlos Mendoza",
+  "uid": "A4 9B 2C 11",
+  "metodo": "Tarjeta RFID",
+  "autorizado": true
+}</pre>
+                </div>
+
+                <!-- Funciones JavaScript disponibles -->
+                <div class="space-y-2">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">2. Funciones JavaScript disponibles en este archivo</p>
+                    <div class="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5 text-xs">
+                        <div>
+                            <code class="text-emerald-400 font-mono">registrarNuevoAcceso({ nombre, uid, metodo, autorizado })</code>
+                            <p class="text-slate-400 mt-0.5">Agrega la fila a la tabla con la hora exacta y, si <code class="text-slate-200">autorizado</code> es <code class="text-slate-200">true</code>, cambia el estado de la puerta a <strong>ABIERTA</strong> durante 5 segundos.</p>
+                        </div>
+                        <div class="pt-2 border-t border-slate-800/80">
+                            <code class="text-amber-400 font-mono">actualizarEstadoPuerta(abierta)</code>
+                            <p class="text-slate-400 mt-0.5">Sincroniza el indicador visual si un sensor magnético (Reed Switch) reporta si la puerta física está abierta (<code class="text-slate-200">true</code>) o cerrada (<code class="text-slate-200">false</code>).</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-3.5 rounded-xl bg-cyan-950/40 border border-cyan-500/20 text-xs text-cyan-200">
+                    <strong>Nota de Hardware:</strong> Recuerda alimentar el módulo lector RC522 estrictamente a <strong>3.3V</strong> desde tu ESP32-S3.
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-slate-800 flex justify-end">
+                <button onclick="toggleIntegrationModal(false)" class="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-sm font-semibold transition-colors cursor-pointer">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lógica JavaScript Limpia y Preparada para Integración IoT -->
+    <script>
+        // =========================================================================
+        // 1. CONFIGURACIÓN GENERAL Y ESTADO DEL SISTEMA
+        // =========================================================================
+        const ESP32_ENDPOINT = "http://192.168.1.100"; // Reemplazar con IP local de tu ESP32-S3 o endpoint Cloud
+        const DOOR_OPEN_DURATION_SEC = 5;
+
+        let isDoorOpen = false;
+        let countdownInterval = null;
+        let remainingSeconds = 0;
+
+        // Registros iniciales precargados para visualizar la bitácora desde el inicio
+        let accessLogs = [
+            {
+                id: 101,
+                nombre: "Carlos Mendoza",
+                uid: "A4 9B 2C 11",
+                metodo: "Tarjeta RFID",
+                fechaHora: formatDateTime(new Date(Date.now() - 1000 * 60 * 14)),
+                autorizado: true
+            },
+            {
+                id: 102,
+                nombre: "Laura Gómez",
+                uid: "7F 3E 81 04",
+                metodo: "Llavero RFID",
+                fechaHora: formatDateTime(new Date(Date.now() - 1000 * 60 * 38)),
+                autorizado: true
+            },
+            {
+                id: 103,
+                nombre: "Visitante Desconocido",
+                uid: "FF 00 9A 52",
+                metodo: "Tarjeta RFID",
+                fechaHora: formatDateTime(new Date(Date.now() - 1000 * 60 * 65)),
+                autorizado: false
+            },
+            {
+                id: 104,
+                nombre: "Andrés Felipe",
+                uid: "19 C4 D0 88",
+                metodo: "Llavero RFID",
+                fechaHora: formatDateTime(new Date(Date.now() - 1000 * 60 * 130)),
+                autorizado: true
+            },
+            {
+                id: 105,
+                nombre: "Apertura Remota (Web)",
+                uid: "N/A",
+                metodo: "Control Web",
+                fechaHora: formatDateTime(new Date(Date.now() - 1000 * 60 * 210)),
+                autorizado: true
+            }
+        ];
+
+        // =========================================================================
+        // 2. FUNCIONES PRINCIPALES DE INTEGRACIÓN REAL CON ESP32-S3
+        // =========================================================================
+
+        /**
+         * Registra un nuevo evento de acceso recibido desde la ESP32-S3 (vía WebSocket, MQTT o Firebase)
+         * o desde el botón de apertura remota.
+         *
+         * @param {Object} evento
+         * @param {string} evento.nombre - Nombre de la persona o "Visitante Desconocido"
+         * @param {string} [evento.uid="N/A"] - Código UID de la tarjeta/llavero o "N/A"
+         * @param {string} [evento.metodo="Tarjeta RFID"] - "Tarjeta RFID", "Llavero RFID" o "Control Web"
+         * @param {boolean} evento.autorizado - true si el acceso fue concedido, false si fue denegado
+         */
+        function registrarNuevoAcceso({ nombre, uid = "N/A", metodo = "Tarjeta RFID", autorizado = true }) {
+            const nuevoRegistro = {
+                id: Date.now(),
+                nombre: nombre || (autorizado ? "Usuario Autorizado" : "Visitante Desconocido"),
+                uid: uid || "N/A",
+                metodo: metodo,
+                fechaHora: formatDateTime(new Date()),
+                autorizado: Boolean(autorizado)
+            };
+
+            // Insertar al inicio de la lista (evento más reciente arriba)
+            accessLogs.unshift(nuevoRegistro);
+            renderLogsTable();
+
+            // Si el acceso es autorizado, abrir la puerta temporalmente durante 5 segundos
+            if (nuevoRegistro.autorizado) {
+                abrirPuertaTemporalmente();
+                showToast(`Acceso autorizado: ${nuevoRegistro.nombre}`, "success");
+            } else {
+                showToast(`Acceso denegado: ${nuevoRegistro.nombre} (${nuevoRegistro.uid})`, "error");
+            }
+        }
+
+        /**
+         * Actualiza visualmente el estado de la puerta (ABIERTA o CERRADA).
+         * Puede ser invocada directamente por un sensor físico conectado a la ESP32-S3.
+         *
+         * @param {boolean} abierta - true para estado ABIERTA, false para estado CERRADA
+         */
+        function actualizarEstadoPuerta(abierta) {
+            isDoorOpen = Boolean(abierta);
+
+            const statusCard = document.getElementById('door-status-card');
+            const iconWrapper = document.getElementById('door-icon-wrapper');
+            const iconLocked = document.getElementById('icon-locked');
+            const iconUnlocked = document.getElementById('icon-unlocked');
+            const statusText = document.getElementById('door-status-text');
+            const statusSubtext = document.getElementById('door-status-subtext');
+            const timerBadge = document.getElementById('door-timer-badge');
+            const progressContainer = document.getElementById('door-progress-container');
+            const btnRemote = document.getElementById('btn-remote-open');
+            const btnRemoteText = document.getElementById('btn-remote-text');
+
+            if (isDoorOpen) {
+                // Estilo ABIERTA (Ámbar / Verde brillante con pulso)
+                statusCard.className = "rounded-2xl p-6 border transition-all duration-300 bg-amber-950/25 border-amber-400/50 flex flex-col items-center text-center";
+                iconWrapper.className = "w-20 h-20 rounded-2xl flex items-center justify-center mb-4 transition-all duration-300 bg-amber-400/20 text-amber-300 border border-amber-400/50 shadow-lg shadow-amber-950/50 animate-pulse";
+
+                iconLocked.classList.add('hidden');
+                iconUnlocked.classList.remove('hidden');
+
+                statusText.textContent = "ABIERTA";
+                statusText.className = "text-2xl sm:text-3xl font-bold tracking-tight text-amber-300";
+                statusSubtext.textContent = "Paso habilitado • Actuador liberado";
+
+                btnRemote.disabled = true;
+                btnRemoteText.textContent = "Puerta Abierta...";
+            } else {
+                // Estilo CERRADA (Esmeralda / Gris oscuro)
+                statusCard.className = "rounded-2xl p-6 border transition-all duration-300 bg-slate-800/50 border-emerald-500/25 flex flex-col items-center text-center";
+                iconWrapper.className = "w-20 h-20 rounded-2xl flex items-center justify-center mb-4 transition-all duration-300 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shadow-lg shadow-slate-950/60";
+
+                iconUnlocked.classList.add('hidden');
+                iconLocked.classList.remove('hidden');
+
+                statusText.textContent = "CERRADA";
+                statusText.className = "text-2xl sm:text-3xl font-bold tracking-tight text-emerald-400";
+                statusSubtext.textContent = "Acceso asegurado • En espera de lectura RFID";
+
+                timerBadge.classList.add('hidden');
+                progressContainer.classList.add('hidden');
+
+                btnRemote.disabled = false;
+                btnRemoteText.textContent = "Abrir Puerta Remotamente";
+            }
+        }
+
+        // =========================================================================
+        // 3. CONTROL REMOTO Y TEMPORIZADOR DE APERTURA (5 SEGUNDOS)
+        // =========================================================================
+
+        /**
+         * Ejecutada al presionar el botón "Abrir Puerta Remotamente".
+         */
+        async function triggerRemoteOpen() {
+            if (isDoorOpen) return;
+
+            // [PUNTO DE INTEGRACIÓN CON ESP32-S3]:
+            // Descomenta este bloque para enviar la orden HTTP/MQTT/Firebase real a tu placa:
+            /*
+            try {
+                const response = await fetch(`${ESP32_ENDPOINT}/abrir`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ comando: 'ABRIR', duracion: DOOR_OPEN_DURATION_SEC })
+                });
+                if (!response.ok) throw new Error('Sin respuesta de la ESP32-S3');
+            } catch (err) {
+                showToast('Error al enviar comando a la ESP32-S3', 'error');
+                return;
+            }
+            */
+
+            // Registrar la apertura en la tabla y activar el ciclo de 5 segundos
+            registrarNuevoAcceso({
+                nombre: "Apertura Remota (Web)",
+                uid: "N/A",
+                metodo: "Control Web",
+                autorizado: true
+            });
+        }
+
+        /**
+         * Mantiene la puerta abierta durante 5 segundos con contador regresivo
+         * y barra de progreso, volviendo automáticamente a CERRADA al finalizar.
+         */
+        function abrirPuertaTemporalmente() {
+            actualizarEstadoPuerta(true);
+
+            remainingSeconds = DOOR_OPEN_DURATION_SEC;
+            const timerBadge = document.getElementById('door-timer-badge');
+            const countdownSpan = document.getElementById('countdown-seconds');
+            const progressContainer = document.getElementById('door-progress-container');
+            const progressBar = document.getElementById('door-progress-bar');
+
+            timerBadge.classList.remove('hidden');
+            progressContainer.classList.remove('hidden');
+            countdownSpan.textContent = remainingSeconds;
+            progressBar.style.width = "100%";
+
+            if (countdownInterval) clearInterval(countdownInterval);
+
+            // Pequeño retardo para iniciar la animación fluida de la barra
+            requestAnimationFrame(() => {
+                progressBar.style.width = `${((remainingSeconds - 1) / DOOR_OPEN_DURATION_SEC) * 100}%`;
+            });
+
+            countdownInterval = setInterval(() => {
+                remainingSeconds--;
+                countdownSpan.textContent = Math.max(0, remainingSeconds);
+                progressBar.style.width = `${(Math.max(0, remainingSeconds - 1) / DOOR_OPEN_DURATION_SEC) * 100}%`;
+
+                if (remainingSeconds <= 0) {
+                    clearInterval(countdownInterval);
+                    actualizarEstadoPuerta(false);
+                }
+            }, 1000);
+        }
+
+        // =========================================================================
+        // 4. RENDERIZADO DE LA TABLA, BÚSQUEDA Y EXPORTACIÓN CSV
+        // =========================================================================
+
+        function renderLogsTable() {
+            const tbody = document.getElementById('access-logs-tbody');
+            const emptyState = document.getElementById('empty-logs-state');
+            const searchQuery = document.getElementById('search-input').value.trim().toLowerCase();
+            const statusFilter = document.getElementById('filter-status').value;
+
+            // Actualizar estadísticas rápidas
+            document.getElementById('stat-total').textContent = accessLogs.length;
+            document.getElementById('stat-allowed').textContent = accessLogs.filter(l => l.autorizado).length;
+            document.getElementById('stat-denied').textContent = accessLogs.filter(l => !l.autorizado).length;
+
+            // Filtrar por texto (nombre o UID) y estado
+            const filteredLogs = accessLogs.filter(log => {
+                const matchesText =
+                    log.nombre.toLowerCase().includes(searchQuery) ||
+                    log.uid.toLowerCase().includes(searchQuery);
+
+                const matchesStatus =
+                    statusFilter === 'ALL' ||
+                    (statusFilter === 'Autorizado' && log.autorizado) ||
+                    (statusFilter === 'Denegado' && !log.autorizado);
+
+                return matchesText && matchesStatus;
+            });
+
+            if (filteredLogs.length === 0) {
+                tbody.innerHTML = '';
+                emptyState.classList.remove('hidden');
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+
+            tbody.innerHTML = filteredLogs.map(log => {
+                const badgeClass = log.autorizado
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+                    : 'bg-rose-500/10 text-rose-400 border-rose-500/25';
+
+                const dotClass = log.autorizado ? 'bg-emerald-400' : 'bg-rose-400';
+                const statusLabel = log.autorizado ? 'Autorizado' : 'Denegado';
+                const nameClass = log.autorizado ? 'text-white font-medium' : 'text-rose-300 font-medium';
+                const avatarClass = log.autorizado
+                    ? 'bg-slate-800 border-slate-700 text-cyan-300'
+                    : 'bg-rose-950/60 border-rose-800/60 text-rose-300';
+
+                // Ícono según el método de ingreso
+                let methodBadge = '';
+                if (log.metodo === 'Control Web') {
+                    methodBadge = `<span class="inline-flex items-center gap-1.5 text-cyan-300 text-xs sm:text-sm">
+                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
+                        ${escapeHtml(log.metodo)}
+                    </span>`;
+                } else if (log.metodo === 'Llavero RFID') {
+                    methodBadge = `<span class="inline-flex items-center gap-1.5 text-amber-300 text-xs sm:text-sm">
+                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+                        ${escapeHtml(log.metodo)}
+                    </span>`;
+                } else {
+                    methodBadge = `<span class="inline-flex items-center gap-1.5 text-slate-300 text-xs sm:text-sm">
+                        <svg class="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
+                        ${escapeHtml(log.metodo)}
+                    </span>`;
+                }
+
+                return `
+                    <tr class="hover:bg-slate-800/40 transition-colors">
+                        <td class="py-3.5 px-5 whitespace-nowrap">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-full border flex items-center justify-center text-xs font-bold shrink-0 ${avatarClass}">
+                                    ${getInitials(log.nombre, log.autorizado)}
+                                </div>
+                                <span class="${nameClass}">${escapeHtml(log.nombre)}</span>
+                            </div>
+                        </td>
+                        <td class="py-3.5 px-5 whitespace-nowrap font-mono text-xs text-slate-400">
+                            ${escapeHtml(log.uid)}
+                        </td>
+                        <td class="py-3.5 px-5 whitespace-nowrap">
+                            ${methodBadge}
+                        </td>
+                        <td class="py-3.5 px-5 whitespace-nowrap font-mono text-xs text-slate-400">
+                            ${escapeHtml(log.fechaHora)}
+                        </td>
+                        <td class="py-3.5 px-5 whitespace-nowrap text-right">
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${badgeClass}">
+                                <span class="w-1.5 h-1.5 rounded-full ${dotClass}"></span>
+                                ${statusLabel}
+                            </span>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function clearLogs() {
+            accessLogs = [];
+            renderLogsTable();
+            showToast("Historial de accesos limpiado", "info");
+        }
+
+        function exportLogsCSV() {
+            if (accessLogs.length === 0) {
+                showToast("No hay registros disponibles para exportar", "error");
+                return;
+            }
+            const headers = ["Nombre,UID,Metodo,Fecha_Hora,Estado"];
+            const rows = accessLogs.map(l =>
+                `"${l.nombre}","${l.uid}","${l.metodo}","${l.fechaHora}","${l.autorizado ? 'Autorizado' : 'Denegado'}"`
+            );
+            const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].join("\n");
+            const link = document.createElement("a");
+            link.setAttribute("href", encodeURI(csvContent));
+            link.setAttribute("download", `registro_accesos_${new Date().toISOString().slice(0, 10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast("Archivo CSV descargado correctamente", "success");
+        }
+
+        // =========================================================================
+        // 5. UTILIDADES DE INTERFAZ
+        // =========================================================================
+
+        function formatDateTime(date) {
+            const pad = (n) => n.toString().padStart(2, '0');
+            return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+        }
+
+        function getInitials(name, authorized) {
+            if (!authorized) return "!";
+            return name
+                .split(' ')
+                .filter(Boolean)
+                .slice(0, 2)
+                .map(w => w[0])
+                .join('')
+                .toUpperCase();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showToast(message, type = "info") {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+
+            let colors = "bg-slate-800 border-slate-700 text-slate-100";
+            if (type === "success") colors = "bg-emerald-950/95 border-emerald-500/40 text-emerald-200";
+            if (type === "error") colors = "bg-rose-950/95 border-rose-500/40 text-rose-200";
+
+            toast.className = `pointer-events-auto px-4 py-3 rounded-xl border shadow-xl text-xs sm:text-sm font-medium transition-all duration-300 transform translate-y-2 opacity-0 ${colors}`;
+            toast.textContent = message;
+
+            container.appendChild(toast);
+
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            });
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 3200);
+        }
+
+        function toggleIntegrationModal(show) {
+            const modal = document.getElementById('integration-modal');
+            if (show) {
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+            } else {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+        }
+
+        // Renderizar tabla al cargar la página
+        document.addEventListener('DOMContentLoaded', () => {
+            renderLogsTable();
+        });
+    </script>
+</body>
+</html>
