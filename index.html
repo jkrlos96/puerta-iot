@@ -553,13 +553,10 @@
                     return;
                 }
 
-                // Registrar la apertura en la tabla y activar el ciclo visual de 5 segundos
-                registrarNuevoAcceso({
-                    nombre: "Apertura Remota (Web)",
-                    uid: "N/A",
-                    metodo: "Control Web",
-                    autorizado: true
-                });
+                // CORREGIDO: Ya no se llama a registrarNuevoAcceso() de forma local.
+                // La ESP32 recibirá el comando, abrirá y publicará de vuelta en puerta/acceso,
+                // evitando así que se duplique el registro en la tabla.
+                showToast("Comando de apertura enviado...", "info");
             });
         }
 
