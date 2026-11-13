@@ -6,6 +6,8 @@
     <title>Control de Acceso IoT | Puerta Automática</title>
     <!-- Tailwind CSS vía CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Librería MQTT.js para conexión WebSocket segura (WSS) desde el navegador -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <!-- Fuentes Inter y JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,24 +28,24 @@
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased selection:bg-cyan-500 selection:text-slate-950">
 
-    <!-- Barra de navegación superior minimalista (sin título en esquina izquierda) -->
+    <!-- Barra de navegación superior minimalista -->
     <header class="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-30">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-            <!-- Indicador de estado de conexión del sistema -->
-            <div id="connection-badge" class="flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-emerald-950/50 border border-emerald-500/30 text-xs sm:text-sm font-medium text-emerald-300">
+            <!-- Indicador de estado de conexión MQTT en tiempo real -->
+            <div id="connection-badge" class="flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-amber-950/50 border border-amber-500/30 text-xs sm:text-sm font-medium text-amber-300 transition-colors duration-300">
                 <span class="relative flex h-2.5 w-2.5">
-                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                    <span id="connection-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                    <span id="connection-dot" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
                 </span>
-                <span id="connection-text">Sistema en línea</span>
+                <span id="connection-text">Conectando a MQTT...</span>
             </div>
 
-            <!-- Botón discreto para abrir modal de Guía de Conexión / API -->
+            <!-- Botón discreto para abrir modal de Guía de Conexión / Topics MQTT -->
             <button onclick="toggleIntegrationModal(true)" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-medium border border-slate-700 transition-colors cursor-pointer">
                 <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                 </svg>
-                <span>Guía de Conexión</span>
+                <span>Guía de Conexión MQTT</span>
             </button>
         </div>
     </header>
@@ -104,7 +106,7 @@
                         <span id="btn-remote-text">Abrir Puerta Remotamente</span>
                     </button>
                     <p class="text-[11px] text-center text-slate-500 mt-3">
-                        Activa el actuador durante 5 segundos y registra el evento en la bitácora.
+                        Envía comando vía MQTT al topic <code class="text-cyan-400 font-mono">puerta/comando</code> por 5 segundos.
                     </p>
                 </div>
 
@@ -204,7 +206,7 @@
         </div>
     </main>
 
-    <!-- Modal Discreto: Guía de Conexión con ESP32-S3 -->
+    <!-- Modal Discreto: Guía de Conexión MQTT con EMQX Cloud y ESP32-S3 -->
     <div id="integration-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
         <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl">
             <div class="p-6 border-b border-slate-800 flex items-center justify-between">
@@ -214,7 +216,7 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
                     </div>
-                    <h3 class="text-base sm:text-lg font-bold text-white">Guía de Conexión API / ESP32-S3</h3>
+                    <h3 class="text-base sm:text-lg font-bold text-white">Configuración MQTT (EMQX Cloud + ESP32-S3)</h3>
                 </div>
                 <button onclick="toggleIntegrationModal(false)" class="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -225,37 +227,58 @@
 
             <div class="p-6 overflow-y-auto space-y-5 text-sm text-slate-300 leading-relaxed">
                 <p>
-                    Esta interfaz expone funciones globales listas para conectarse por <strong>WebSockets, MQTT o Firebase</strong> con tu microcontrolador <strong>ESP32-S3</strong>:
+                    Esta interfaz ya está conectada mediante <strong>MQTT sobre WebSocket Seguro (WSS)</strong> a tu broker <strong>EMQX Serverless</strong>.
                 </p>
 
-                <!-- Bloque JSON esperado -->
+                <!-- Parámetros del Broker -->
                 <div class="space-y-2">
-                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">1. Formato JSON enviado desde la ESP32-S3 al leer un Tag</p>
-                    <pre class="p-4 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs text-cyan-300 overflow-x-auto">{
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">1. Credenciales del Broker Configuradas</p>
+                    <div class="p-4 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs space-y-1.5 text-slate-300">
+                        <div><span class="text-slate-500">Host:</span> <span class="text-cyan-300">na188f7e.ala.us-east-1.emqxsl.com</span></div>
+                        <div><span class="text-slate-500">Puerto Web (WSS):</span> <span class="text-emerald-400">8084</span> <span class="text-slate-500">(ruta /mqtt)</span></div>
+                        <div><span class="text-slate-500">Puerto ESP32 (TLS/SSL):</span> <span class="text-amber-400">8883</span></div>
+                        <div><span class="text-slate-500">Usuario:</span> <span class="text-white">Jkrlos</span></div>
+                    </div>
+                </div>
+
+                <!-- Topics MQTT -->
+                <div class="space-y-2">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">2. Topics MQTT Utilizados</p>
+                    <div class="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3 text-xs">
+                        <div>
+                            <div class="flex items-center justify-between">
+                                <code class="text-emerald-400 font-mono font-semibold">puerta/acceso</code>
+                                <span class="text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">ESP32 → Web</span>
+                            </div>
+                            <p class="text-slate-400 mt-1">La ESP32-S3 publica aquí cuando lee una tarjeta/llavero RFID:</p>
+                            <pre class="mt-2 p-2.5 rounded-lg bg-slate-900 text-cyan-300 font-mono overflow-x-auto">{
   "nombre": "Carlos Mendoza",
   "uid": "A4 9B 2C 11",
   "metodo": "Tarjeta RFID",
   "autorizado": true
 }</pre>
-                </div>
-
-                <!-- Funciones JavaScript disponibles -->
-                <div class="space-y-2">
-                    <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">2. Funciones JavaScript disponibles en este archivo</p>
-                    <div class="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5 text-xs">
-                        <div>
-                            <code class="text-emerald-400 font-mono">registrarNuevoAcceso({ nombre, uid, metodo, autorizado })</code>
-                            <p class="text-slate-400 mt-0.5">Agrega la fila a la tabla con la hora exacta y, si <code class="text-slate-200">autorizado</code> es <code class="text-slate-200">true</code>, cambia el estado de la puerta a <strong>ABIERTA</strong> durante 5 segundos.</p>
                         </div>
-                        <div class="pt-2 border-t border-slate-800/80">
-                            <code class="text-amber-400 font-mono">actualizarEstadoPuerta(abierta)</code>
-                            <p class="text-slate-400 mt-0.5">Sincroniza el indicador visual si un sensor magnético (Reed Switch) reporta si la puerta física está abierta (<code class="text-slate-200">true</code>) o cerrada (<code class="text-slate-200">false</code>).</p>
+
+                        <div class="pt-3 border-t border-slate-800/80">
+                            <div class="flex items-center justify-between">
+                                <code class="text-cyan-400 font-mono font-semibold">puerta/comando</code>
+                                <span class="text-[11px] px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">Web → ESP32</span>
+                            </div>
+                            <p class="text-slate-400 mt-1">La web publica aquí cuando presionas <strong>"Abrir Puerta Remotamente"</strong>:</p>
+                            <pre class="mt-2 p-2.5 rounded-lg bg-slate-900 text-amber-300 font-mono overflow-x-auto">{
+  "comando": "ABRIR",
+  "duracion": 5
+}</pre>
+                        </div>
+
+                        <div class="pt-3 border-t border-slate-800/80">
+                            <div class="flex items-center justify-between">
+                                <code class="text-amber-400 font-mono font-semibold">puerta/estado</code>
+                                <span class="text-[11px] px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">ESP32 → Web (Opcional)</span>
+                            </div>
+                            <p class="text-slate-400 mt-1">La ESP32-S3 puede publicar <code class="text-slate-200">{"abierta": true}</code> o <code class="text-slate-200">{"abierta": false}</code> para sincronizar un sensor magnético físico.</p>
                         </div>
                     </div>
-                </div>
-
-                <div class="p-3.5 rounded-xl bg-cyan-950/40 border border-cyan-500/20 text-xs text-cyan-200">
-                    <strong>Nota de Hardware:</strong> Recuerda alimentar el módulo lector RC522 estrictamente a <strong>3.3V</strong> desde tu ESP32-S3.
                 </div>
             </div>
 
@@ -267,19 +290,35 @@
         </div>
     </div>
 
-    <!-- Lógica JavaScript Limpia y Preparada para Integración IoT -->
+    <!-- Lógica JavaScript con Integración MQTT Real (EMQX Cloud) -->
     <script>
         // =========================================================================
-        // 1. CONFIGURACIÓN GENERAL Y ESTADO DEL SISTEMA
+        // 1. CONFIGURACIÓN DEL BROKER MQTT (EMQX SERVERLESS)
         // =========================================================================
-        const ESP32_ENDPOINT = "http://192.168.1.100"; // Reemplazar con IP local de tu ESP32-S3 o endpoint Cloud
+        const MQTT_CONFIG = {
+            host: "na188f7e.ala.us-east-1.emqxsl.com",
+            port: 8084, // Puerto WebSocket sobre TLS/SSL (WSS)
+            path: "/mqtt",
+            username: "Jkrlos",
+            password: "3164241797"
+        };
+
+        // Topics MQTT para comunicación bidireccional con tu ESP32-S3
+        const MQTT_TOPICS = {
+            ACCESO: "puerta/acceso",     // Suscripción: recibe eventos RFID desde la ESP32-S3
+            COMANDO: "puerta/comando",   // Publicación: envía orden de apertura remota a la ESP32-S3
+            ESTADO: "puerta/estado"      // Suscripción: sincroniza estado físico (sensor Reed Switch)
+        };
+
         const DOOR_OPEN_DURATION_SEC = 5;
 
+        let mqttClient = null;
+        let isMqttConnected = false;
         let isDoorOpen = false;
         let countdownInterval = null;
         let remainingSeconds = 0;
 
-        // Registros iniciales precargados para visualizar la bitácora desde el inicio
+        // Registros iniciales de ejemplo (puedes limpiarlos con el botón "Limpiar historial")
         let accessLogs = [
             {
                 id: 101,
@@ -304,39 +343,125 @@
                 metodo: "Tarjeta RFID",
                 fechaHora: formatDateTime(new Date(Date.now() - 1000 * 60 * 65)),
                 autorizado: false
-            },
-            {
-                id: 104,
-                nombre: "Andrés Felipe",
-                uid: "19 C4 D0 88",
-                metodo: "Llavero RFID",
-                fechaHora: formatDateTime(new Date(Date.now() - 1000 * 60 * 130)),
-                autorizado: true
-            },
-            {
-                id: 105,
-                nombre: "Apertura Remota (Web)",
-                uid: "N/A",
-                metodo: "Control Web",
-                fechaHora: formatDateTime(new Date(Date.now() - 1000 * 60 * 210)),
-                autorizado: true
             }
         ];
 
         // =========================================================================
-        // 2. FUNCIONES PRINCIPALES DE INTEGRACIÓN REAL CON ESP32-S3
+        // 2. CONEXIÓN Y MANEJO DE MENSAJES MQTT
         // =========================================================================
 
-        /**
-         * Registra un nuevo evento de acceso recibido desde la ESP32-S3 (vía WebSocket, MQTT o Firebase)
-         * o desde el botón de apertura remota.
-         *
-         * @param {Object} evento
-         * @param {string} evento.nombre - Nombre de la persona o "Visitante Desconocido"
-         * @param {string} [evento.uid="N/A"] - Código UID de la tarjeta/llavero o "N/A"
-         * @param {string} [evento.metodo="Tarjeta RFID"] - "Tarjeta RFID", "Llavero RFID" o "Control Web"
-         * @param {boolean} evento.autorizado - true si el acceso fue concedido, false si fue denegado
-         */
+        function initMQTT() {
+            const brokerUrl = `wss://${MQTT_CONFIG.host}:${MQTT_CONFIG.port}${MQTT_CONFIG.path}`;
+            const clientId = `web_puerta_${Math.random().toString(16).substring(2, 10)}`;
+
+            updateConnectionBadge("connecting", "Conectando a MQTT...");
+
+            mqttClient = mqtt.connect(brokerUrl, {
+                clientId: clientId,
+                username: MQTT_CONFIG.username,
+                password: MQTT_CONFIG.password,
+                clean: true,
+                connectTimeout: 8000,
+                reconnectPeriod: 3000
+            });
+
+            // Evento: Conexión exitosa al broker EMQX
+            mqttClient.on("connect", () => {
+                isMqttConnected = true;
+                updateConnectionBadge("online", "MQTT Conectado");
+                showToast("Conectado al servidor MQTT (EMQX)", "success");
+
+                // Suscribirse a los topics de la ESP32-S3
+                mqttClient.subscribe([MQTT_TOPICS.ACCESO, MQTT_TOPICS.ESTADO], { qos: 1 }, (err) => {
+                    if (err) {
+                        console.error("Error al suscribirse a los topics:", err);
+                        showToast("Error al suscribirse a topics MQTT", "error");
+                    }
+                });
+            });
+
+            // Evento: Mensaje recibido desde la ESP32-S3
+            mqttClient.on("message", (topic, payload) => {
+                const rawMessage = payload.toString();
+                console.log(`[MQTT] ${topic}:`, rawMessage);
+
+                if (topic === MQTT_TOPICS.ACCESO) {
+                    try {
+                        const data = JSON.parse(rawMessage);
+                        registrarNuevoAcceso({
+                            nombre: data.nombre,
+                            uid: data.uid,
+                            metodo: data.metodo || "Tarjeta RFID",
+                            autorizado: data.autorizado !== undefined ? Boolean(data.autorizado) : true
+                        });
+                    } catch (e) {
+                        console.error("Payload JSON inválido en puerta/acceso:", e);
+                    }
+                } else if (topic === MQTT_TOPICS.ESTADO) {
+                    try {
+                        const data = JSON.parse(rawMessage);
+                        if (typeof data.abierta === "boolean") {
+                            actualizarEstadoPuerta(data.abierta);
+                        }
+                    } catch (e) {
+                        // Soporte si la ESP32 envía texto plano "ABIERTA" o "CERRADA"
+                        const txt = rawMessage.trim().toUpperCase();
+                        if (txt === "ABIERTA" || txt === "1" || txt === "TRUE") {
+                            actualizarEstadoPuerta(true);
+                        } else if (txt === "CERRADA" || txt === "0" || txt === "FALSE") {
+                            actualizarEstadoPuerta(false);
+                        }
+                    }
+                }
+            });
+
+            // Evento: Reconexión en curso
+            mqttClient.on("reconnect", () => {
+                isMqttConnected = false;
+                updateConnectionBadge("connecting", "Reconectando MQTT...");
+            });
+
+            // Evento: Desconexión
+            mqttClient.on("close", () => {
+                isMqttConnected = false;
+                updateConnectionBadge("offline", "MQTT Desconectado");
+            });
+
+            // Evento: Error de conexión o autenticación
+            mqttClient.on("error", (err) => {
+                console.error("Error de conexión MQTT:", err);
+                isMqttConnected = false;
+                updateConnectionBadge("offline", "Error de conexión MQTT");
+            });
+        }
+
+        function updateConnectionBadge(status, text) {
+            const badge = document.getElementById("connection-badge");
+            const ping = document.getElementById("connection-ping");
+            const dot = document.getElementById("connection-dot");
+            const label = document.getElementById("connection-text");
+
+            label.textContent = text;
+
+            if (status === "online") {
+                badge.className = "flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-emerald-950/50 border border-emerald-500/30 text-xs sm:text-sm font-medium text-emerald-300 transition-colors duration-300";
+                ping.className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75";
+                dot.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500";
+            } else if (status === "connecting") {
+                badge.className = "flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-amber-950/50 border border-amber-500/30 text-xs sm:text-sm font-medium text-amber-300 transition-colors duration-300";
+                ping.className = "animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75";
+                dot.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500";
+            } else {
+                badge.className = "flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-rose-950/50 border border-rose-500/30 text-xs sm:text-sm font-medium text-rose-300 transition-colors duration-300";
+                ping.className = "hidden";
+                dot.className = "relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500";
+            }
+        }
+
+        // =========================================================================
+        // 3. FUNCIONES PRINCIPALES DE REGISTRO Y ESTADO DE LA PUERTA
+        // =========================================================================
+
         function registrarNuevoAcceso({ nombre, uid = "N/A", metodo = "Tarjeta RFID", autorizado = true }) {
             const nuevoRegistro = {
                 id: Date.now(),
@@ -347,11 +472,9 @@
                 autorizado: Boolean(autorizado)
             };
 
-            // Insertar al inicio de la lista (evento más reciente arriba)
             accessLogs.unshift(nuevoRegistro);
             renderLogsTable();
 
-            // Si el acceso es autorizado, abrir la puerta temporalmente durante 5 segundos
             if (nuevoRegistro.autorizado) {
                 abrirPuertaTemporalmente();
                 showToast(`Acceso autorizado: ${nuevoRegistro.nombre}`, "success");
@@ -360,12 +483,6 @@
             }
         }
 
-        /**
-         * Actualiza visualmente el estado de la puerta (ABIERTA o CERRADA).
-         * Puede ser invocada directamente por un sensor físico conectado a la ESP32-S3.
-         *
-         * @param {boolean} abierta - true para estado ABIERTA, false para estado CERRADA
-         */
         function actualizarEstadoPuerta(abierta) {
             isDoorOpen = Boolean(abierta);
 
@@ -381,7 +498,6 @@
             const btnRemoteText = document.getElementById('btn-remote-text');
 
             if (isDoorOpen) {
-                // Estilo ABIERTA (Ámbar / Verde brillante con pulso)
                 statusCard.className = "rounded-2xl p-6 border transition-all duration-300 bg-amber-950/25 border-amber-400/50 flex flex-col items-center text-center";
                 iconWrapper.className = "w-20 h-20 rounded-2xl flex items-center justify-center mb-4 transition-all duration-300 bg-amber-400/20 text-amber-300 border border-amber-400/50 shadow-lg shadow-amber-950/50 animate-pulse";
 
@@ -395,7 +511,6 @@
                 btnRemote.disabled = true;
                 btnRemoteText.textContent = "Puerta Abierta...";
             } else {
-                // Estilo CERRADA (Esmeralda / Gris oscuro)
                 statusCard.className = "rounded-2xl p-6 border transition-all duration-300 bg-slate-800/50 border-emerald-500/25 flex flex-col items-center text-center";
                 iconWrapper.className = "w-20 h-20 rounded-2xl flex items-center justify-center mb-4 transition-all duration-300 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shadow-lg shadow-slate-950/60";
 
@@ -415,44 +530,39 @@
         }
 
         // =========================================================================
-        // 3. CONTROL REMOTO Y TEMPORIZADOR DE APERTURA (5 SEGUNDOS)
+        // 4. CONTROL REMOTO POR MQTT Y TEMPORIZADOR DE APERTURA (5 SEGUNDOS)
         // =========================================================================
 
-        /**
-         * Ejecutada al presionar el botón "Abrir Puerta Remotamente".
-         */
-        async function triggerRemoteOpen() {
+        function triggerRemoteOpen() {
             if (isDoorOpen) return;
 
-            // [PUNTO DE INTEGRACIÓN CON ESP32-S3]:
-            // Descomenta este bloque para enviar la orden HTTP/MQTT/Firebase real a tu placa:
-            /*
-            try {
-                const response = await fetch(`${ESP32_ENDPOINT}/abrir`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ comando: 'ABRIR', duracion: DOOR_OPEN_DURATION_SEC })
-                });
-                if (!response.ok) throw new Error('Sin respuesta de la ESP32-S3');
-            } catch (err) {
-                showToast('Error al enviar comando a la ESP32-S3', 'error');
+            if (!mqttClient || !isMqttConnected) {
+                showToast("No hay conexión con el broker MQTT. Reintentando...", "error");
                 return;
             }
-            */
 
-            // Registrar la apertura en la tabla y activar el ciclo de 5 segundos
-            registrarNuevoAcceso({
-                nombre: "Apertura Remota (Web)",
-                uid: "N/A",
-                metodo: "Control Web",
-                autorizado: true
+            const payload = JSON.stringify({
+                comando: "ABRIR",
+                duracion: DOOR_OPEN_DURATION_SEC
+            });
+
+            mqttClient.publish(MQTT_TOPICS.COMANDO, payload, { qos: 1 }, (err) => {
+                if (err) {
+                    console.error("Error al publicar comando MQTT:", err);
+                    showToast("Error al enviar comando MQTT a la puerta", "error");
+                    return;
+                }
+
+                // Registrar la apertura en la tabla y activar el ciclo visual de 5 segundos
+                registrarNuevoAcceso({
+                    nombre: "Apertura Remota (Web)",
+                    uid: "N/A",
+                    metodo: "Control Web",
+                    autorizado: true
+                });
             });
         }
 
-        /**
-         * Mantiene la puerta abierta durante 5 segundos con contador regresivo
-         * y barra de progreso, volviendo automáticamente a CERRADA al finalizar.
-         */
         function abrirPuertaTemporalmente() {
             actualizarEstadoPuerta(true);
 
@@ -469,7 +579,6 @@
 
             if (countdownInterval) clearInterval(countdownInterval);
 
-            // Pequeño retardo para iniciar la animación fluida de la barra
             requestAnimationFrame(() => {
                 progressBar.style.width = `${((remainingSeconds - 1) / DOOR_OPEN_DURATION_SEC) * 100}%`;
             });
@@ -487,7 +596,7 @@
         }
 
         // =========================================================================
-        // 4. RENDERIZADO DE LA TABLA, BÚSQUEDA Y EXPORTACIÓN CSV
+        // 5. RENDERIZADO DE LA TABLA, BÚSQUEDA Y EXPORTACIÓN CSV
         // =========================================================================
 
         function renderLogsTable() {
@@ -496,12 +605,10 @@
             const searchQuery = document.getElementById('search-input').value.trim().toLowerCase();
             const statusFilter = document.getElementById('filter-status').value;
 
-            // Actualizar estadísticas rápidas
             document.getElementById('stat-total').textContent = accessLogs.length;
             document.getElementById('stat-allowed').textContent = accessLogs.filter(l => l.autorizado).length;
             document.getElementById('stat-denied').textContent = accessLogs.filter(l => !l.autorizado).length;
 
-            // Filtrar por texto (nombre o UID) y estado
             const filteredLogs = accessLogs.filter(log => {
                 const matchesText =
                     log.nombre.toLowerCase().includes(searchQuery) ||
@@ -535,7 +642,6 @@
                     ? 'bg-slate-800 border-slate-700 text-cyan-300'
                     : 'bg-rose-950/60 border-rose-800/60 text-rose-300';
 
-                // Ícono según el método de ingreso
                 let methodBadge = '';
                 if (log.metodo === 'Control Web') {
                     methodBadge = `<span class="inline-flex items-center gap-1.5 text-cyan-300 text-xs sm:text-sm">
@@ -610,7 +716,7 @@
         }
 
         // =========================================================================
-        // 5. UTILIDADES DE INTERFAZ
+        // 6. UTILIDADES DE INTERFAZ
         // =========================================================================
 
         function formatDateTime(date) {
@@ -669,9 +775,10 @@
             }
         }
 
-        // Renderizar tabla al cargar la página
+        // Inicializar tabla y conexión MQTT al cargar la página
         document.addEventListener('DOMContentLoaded', () => {
             renderLogsTable();
+            initMQTT();
         });
     </script>
 </body>
